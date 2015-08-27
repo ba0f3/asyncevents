@@ -1,5 +1,5 @@
 [Package]
-name          = "asyncevent"
+name          = "asyncevents"
 version       = "0.1.0"
 author        = "Wang Tong"
 description   = "Async event loop for MVC"
