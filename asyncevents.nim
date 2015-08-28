@@ -1,14 +1,14 @@
-import asyncdispatch, typeinfo
+import asyncdispatch
 
 type
     AsyncEventProc*[T] = proc(e: T): Future[void] {.closure.}
 
-    AsyncEventProcNodeObj[T] = object
+    AsyncEventProcNodeObj[T] = object  ## A handler node, a name node consists of
         next: ref AsyncEventProcNodeObj[T]
         value: proc(e: T): Future[void] {.closure.}
     AsyncEventProcNode[T] = ref AsyncEventProcNodeObj[T]
 
-    AsyncEventNameNodeObj[T] = object
+    AsyncEventNameNodeObj[T] = object  ## A name node, a emitter consists of, a type node consists of
         next: ref AsyncEventNameNodeObj[T]
         value: string
         head: AsyncEventProcNode[T]
@@ -16,10 +16,12 @@ type
         length: int
     AsyncEventNameNode[T] = ref AsyncEventNameNodeObj[T]
 
-    # AsyncEventEmitter*[T] = object
-    #     head: AsyncEventNameNode[T]
+    AsyncEventEmitter*[T] = object  ## An object that fires events and holds event handlers for an object.
+        head: AsyncEventNameNode[T]
+        tail: AsyncEventNameNode[T]
+        length: int
 
-    AsyncEventTypeNodeObj[T] = object
+    AsyncEventTypeNodeObj[T] = object  ## A type node, a type emitter consists of
         next: ref AsyncEventTypeNodeObj[T]
         value: string
         head: AsyncEventNameNode[T]
@@ -27,12 +29,17 @@ type
         length: int
     AsyncEventTypeNode[T] = ref AsyncEventTypeNodeObj[T]
 
-    AsyncEventTypeEmitter*[T] = object
+    AsyncEventTypeEmitter*[T] = object  ## An object that fires events and holds event handlers for an object.
         head: AsyncEventTypeNode[T]
         tail: AsyncEventTypeNode[T]
         length: int
 
 proc initAsyncEventTypeEmitter*[T](): AsyncEventTypeEmitter[T] =
+    ## Creates and returns a new AsyncEventTypeEmitter[T].
+    discard
+
+proc initAsyncEventEmitter*[T](): AsyncEventEmitter[T] =
+    ## Creates and returns a new AsyncEventEmitter[T].
     discard
 
 template newImpl() = 
@@ -62,6 +69,9 @@ iterator nodes[T](L: AsyncEventNameNode[T]) {.inline.} =
 iterator nodes[T](L: AsyncEventTypeNode[T]) {.inline.} = 
     nodesImpl()
 
+iterator nodes[T](L: AsyncEventEmitter[T]) {.inline.} = 
+    nodesImpl()
+
 iterator nodes[T](L: AsyncEventTypeEmitter[T]) {.inline.} = 
     nodesImpl()
 
@@ -74,6 +84,10 @@ proc find[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure
     findImpl()
 
 proc find[T](L: AsyncEventTypeNode[T], value: string): 
+            AsyncEventNameNode[T] =
+    findImpl()
+
+proc find[T](L: AsyncEventEmitter[T], value: string): 
             AsyncEventNameNode[T] =
     findImpl()
 
@@ -97,6 +111,11 @@ proc finds[T](L: AsyncEventTypeNode[T], value: string):
     var prev: AsyncEventNameNode[T]
     findsImpl()
 
+proc finds[T](L: AsyncEventEmitter[T], value: string): 
+             tuple[prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]] =
+    var prev: AsyncEventNameNode[T]
+    findsImpl()
+
 proc finds[T](L: AsyncEventTypeEmitter[T], value: string): 
              tuple[prev: AsyncEventTypeNode[T], curr: AsyncEventTypeNode[T]] =
     var prev: AsyncEventTypeNode[T]
@@ -112,15 +131,15 @@ template appendImpl() =
     L.length.inc()
 
 proc append[T](L: AsyncEventNameNode[T], n: AsyncEventProcNode[T]) = 
-    ## appends a node `n` to `L`. Efficiency: O(1).
     appendImpl()
 
 proc append[T](L: AsyncEventTypeNode[T], n: AsyncEventNameNode[T]) = 
-    ## appends a node `n` to `L`. Efficiency: O(1).
+    appendImpl()
+
+proc append[T](L: var AsyncEventEmitter[T], n: AsyncEventNameNode[T]) = 
     appendImpl()
 
 proc append[T](L: var AsyncEventTypeEmitter[T], n: AsyncEventTypeNode[T]) = 
-    ## appends a node `n` to `L`. Efficiency: O(1).
     appendImpl()
 
 proc append[T](nNode: AsyncEventNameNode[T], p: proc(e: T): Future[void] {.closure.}) = 
@@ -131,6 +150,12 @@ proc append[T](tNode: AsyncEventTypeNode[T], name: string, p: proc(e: T): Future
     var nNode = newAsyncEventNameNode[T](name)
     nNode.append(pNode)
     tNode.append(nNode)
+
+proc append[T](eNode: var AsyncEventEmitter[T], name: string, p: proc(e: T): Future[void] {.closure.}) = 
+    var pNode = newAsyncEventProcNode[T](p)
+    var nNode = newAsyncEventNameNode[T](name)
+    nNode.append(pNode)
+    eNode.append(nNode)
 
 proc append[T](eNode: var AsyncEventTypeEmitter[T], 
                typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) = 
@@ -157,26 +182,54 @@ proc remove[T](L: AsyncEventNameNode[T], prev: AsyncEventProcNode[T], curr: Asyn
 proc remove[T](L: AsyncEventTypeNode[T], prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]) = 
     removeImpl()
 
+proc remove[T](L: var AsyncEventEmitter[T], prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]) = 
+    removeImpl()
+
 proc remove[T](L: var AsyncEventTypeEmitter[T], prev: AsyncEventTypeNode[T], curr: AsyncEventTypeNode[T]) = 
     removeImpl()
 
 proc countProcs*[T](L: AsyncEventTypeEmitter[T], typ: string, name: string): int {.inline.} =
+    ## Counts the handlers of an AsyncEventTypeEmitter[T]. 
     var tnode = L.find(typ)
     if not tnode.isNil():
         var nnode = tnode.find(name)
         if not nnode.isNil():
             return nnode.length
 
+proc countProcs*[T](L: AsyncEventEmitter[T], name: string): int {.inline.} =
+    ## Counts the handlers of an AsyncEventEmitter[T]. 
+    var nnode = L.find(name)
+    if not nnode.isNil():
+        return nnode.length
+
 proc countNames*[T](L: AsyncEventTypeEmitter[T], typ: string): int {.inline.} =
+    ## Counts the names of an AsyncEventTypeEmitter[T]. 
     var node = L.find(typ)
     if not node.isNil(): 
         return node.length
 
-proc countTypes*[T](L: AsyncEventTypeEmitter[T]): int {.inline.} =
+proc countNames*[T](L: AsyncEventEmitter[T]): int {.inline.} =
+    ## Counts the names of an AsyncEventEmitter[T]. 
     return L.length
+
+proc countTypes*[T](L: AsyncEventTypeEmitter[T]): int {.inline.} =
+    ## Counts the types of an AsyncEventTypeEmitter[T]. 
+    return L.length
+
+proc on*[T](x: var AsyncEventEmitter[T], 
+            name: string, p: proc(e: T): Future[void] {.closure.}) =
+    ## Assigns a event handler with the future. If the event
+    ## doesn't exist, it will be created.
+    var nNode = x.find(name)
+    if nNode.isNil():
+        x.append(name, p)
+    else:
+        nNode.append(p)
 
 proc on*[T](x: var AsyncEventTypeEmitter[T], 
             typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
+    ## Assigns a event handler with the callback. If the event
+    ## doesn't exist, it will be created.
     var tNode = x.find(typ)
     if tNode.isNil():
         x.append(typ, name, p)
@@ -187,8 +240,20 @@ proc on*[T](x: var AsyncEventTypeEmitter[T],
         else:
             nNode.append(p)
 
+proc off*[T](x: var AsyncEventEmitter[T], 
+             name: string, p: proc(e: T): Future[void] {.closure.}) =
+    ## Removes the callback from the specified event handler.
+    var (pnNode, cnNode) = x.finds(name)
+    if not cnNode.isNil():
+        var (ppNode, cpNode) = cnNode.finds(p)
+        if not cpNode.isNil():
+            cnNode.remove(ppNode, cpNode)
+            if cnNode.head.isNil():
+                x.remove(pnNode, cnNode)
+
 proc off*[T](x: var AsyncEventTypeEmitter[T], 
              typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
+    ## Removes the callback from the specified event handler.
     var (ptNode, ctNode) = x.finds(typ)
     if not ctNode.isNil():
         var (pnNode, cnNode) = ctNode.finds(name)
@@ -201,8 +266,15 @@ proc off*[T](x: var AsyncEventTypeEmitter[T],
                 if ctNode.head.isNil():
                     x.remove(ptNode, ctNode)
 
-proc emit*[T](x: var AsyncEventTypeEmitter[T], 
-              typ: string, name: string, e: T) =
+proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T) =
+    ## Fires an event handler with specified event arguments.
+    var nNode = x.find(name)
+    if not nNode.isNil():
+        for pNode in nNode.nodes():
+            asyncCheck pNode.value(e)
+
+proc emit*[T](x: AsyncEventTypeEmitter[T], typ: string, name: string, e: T) =
+    ## Fires an event handler with specified event arguments.
     var tNode = x.find(typ)
     if not tNode.isNil():
         var nNode = tNode.find(name)
@@ -215,51 +287,70 @@ when isMainModule:
         MyArgs = ref object
             id: int
 
-    proc foo1(e: MyArgs): Future[void] {.closure.} =
+    proc foo(e: MyArgs): Future[void] {.closure.} =
         var fut = newFuture[void]()
         assert e.id == 1
         return fut
 
-    proc foo2(e: MyArgs) {.async.} =
+    proc bar(e: MyArgs) {.async.} =
         await sleepAsync(100)
-        assert e.id == 2
+        assert e.id == 1
 
     var em = initAsyncEventTypeEmitter[MyArgs]()
-    var argsA = new(MyArgs) 
-    var argsB = new(MyArgs) 
-    argsA.id = 1
-    argsB.id = 2
+    var args = new(MyArgs)  
+    args.id = 1
 
-    em.on("A", "/path", foo1)
-    em.on("A", "/path", foo1)
-    em.on("B", "/path", foo2)
-    em.on("B", "/", foo2)
+    em.on("A", "/path", foo)
+    em.on("A", "/path", bar)
+    em.on("B", "/path", foo)
+    em.on("B", "/", bar)
 
     assert em.countTypes() == 2
     assert em.countNames("A") == 1
     assert em.countNames("B") == 2
     assert em.countProcs("A", "/path") == 2
     assert em.countProcs("B", "/path") == 1
+    assert em.countProcs("B", "/") == 1
 
-    em.emit("A", "/path", argsA)
-    em.emit("B", "/", argsB)
+    em.emit("A", "/path", args)
+    em.emit("B", "/", args)
 
-    em.off("A", "/path", foo1)
-    em.off("A", "/path", foo1)
+    em.off("A", "/path", foo)
+    em.off("A", "/path", bar)
 
     assert em.countTypes() == 1
     assert em.countNames("A") == 0
     assert em.countNames("B") == 2
     assert em.countProcs("A", "/path") == 0
-    assert em.countProcs("B", "/path") == 1
 
-    em.off("B", "/path", foo2)
-    em.off("B", "/", foo2)
+    em.off("B", "/path", foo)
+    em.off("B", "/", bar)
 
     assert em.countTypes() == 0
-    assert em.countNames("A") == 0
     assert em.countNames("B") == 0
-    assert em.countProcs("A", "/path") == 0
     assert em.countProcs("B", "/path") == 0
+
+    var emm = initAsyncEventEmitter[MyArgs]()
+
+    emm.on("A", foo)
+    emm.on("A", bar)
+    emm.on("B", foo)
+    emm.on("B", foo)
+    emm.on("B", bar)
+
+    assert emm.countNames() == 2
+    assert emm.countProcs("A") == 2
+    assert emm.countProcs("B") == 3
+
+    emm.emit("A", args)
+    emm.emit("B", args)
+
+    emm.off("A", foo)
+    emm.off("A", bar)
+    emm.off("B", foo)
+
+    assert emm.countNames() == 1
+    assert emm.countProcs("A") == 0
+    assert emm.countProcs("B") == 2
 
     runForever()
