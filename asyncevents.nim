@@ -226,6 +226,17 @@ proc on*[T](x: var AsyncEventEmitter[T],
     else:
         nNode.append(p)
 
+proc on*[T](x: var AsyncEventEmitter[T], 
+            name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+    ## Assigns a event handler with the future. If the event
+    ## doesn't exist, it will be created.
+    var nNode = x.find(name)
+    if nNode.isNil():
+        nNode = newAsyncEventNameNode[T](name)
+        x.append(nNode)
+    for p in ps:
+        nNode.append(p)
+
 proc on*[T](x: var AsyncEventTypeEmitter[T], 
             typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
     ## Assigns a event handler with the callback. If the event
@@ -240,6 +251,25 @@ proc on*[T](x: var AsyncEventTypeEmitter[T],
         else:
             nNode.append(p)
 
+proc on*[T](x: var AsyncEventTypeEmitter[T], 
+            typ: string, name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+    ## Assigns a event handler with the callback. If the event
+    ## doesn't exist, it will be created.
+    var tNode = x.find(typ)
+    var nNode: AsyncEventNameNode[T]
+    if tNode.isNil():
+        tNode = newAsyncEventTypeNode[T](typ)
+        nNode = newAsyncEventNameNode[T](name)
+        x.append(tNode)
+        tNode.append(nNode)
+    else:
+        nNode = tNode.find(name)
+        if nNode.isNil():
+            nNode = newAsyncEventNameNode[T](name)
+            tNode.append(nNode)
+    for p in ps:
+        nNode.append(p)
+
 proc off*[T](x: var AsyncEventEmitter[T], 
              name: string, p: proc(e: T): Future[void] {.closure.}) =
     ## Removes the callback from the specified event handler.
@@ -250,6 +280,17 @@ proc off*[T](x: var AsyncEventEmitter[T],
             cnNode.remove(ppNode, cpNode)
             if cnNode.head.isNil():
                 x.remove(pnNode, cnNode)
+
+proc off*[T](x: var AsyncEventEmitter[T], 
+             name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+    var (pnNode, cnNode) = x.finds(name)
+    if not cnNode.isNil():
+        for p in ps:
+            var (ppNode, cpNode) = cnNode.finds(p)
+            if not cpNode.isNil():
+                cnNode.remove(ppNode, cpNode)
+        if cnNode.head.isNil():
+            x.remove(pnNode, cnNode)
 
 proc off*[T](x: var AsyncEventTypeEmitter[T], 
              typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
@@ -265,6 +306,22 @@ proc off*[T](x: var AsyncEventTypeEmitter[T],
                     ctNode.remove(pnNode, cnNode)
                 if ctNode.head.isNil():
                     x.remove(ptNode, ctNode)
+
+proc off*[T](x: var AsyncEventTypeEmitter[T], 
+             typ: string, name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+    ## Removes the callback from the specified event handler.
+    var (ptNode, ctNode) = x.finds(typ)
+    if not ctNode.isNil():
+        var (pnNode, cnNode) = ctNode.finds(name)
+        if not cnNode.isNil():
+            for p in ps:
+                var (ppNode, cpNode) = cnNode.finds(p)
+                if not cpNode.isNil():
+                    cnNode.remove(ppNode, cpNode)
+            if cnNode.head.isNil():
+                ctNode.remove(pnNode, cnNode)
+            if ctNode.head.isNil():
+                x.remove(ptNode, ctNode)
 
 proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T) =
     ## Fires an event handler with specified event arguments.
@@ -292,7 +349,7 @@ when isMainModule:
         assert e.id == 1
         return fut
 
-    proc bar(e: MyArgs) {.async.} =
+    proc bar(e: MyArgs) {.async, closure.} =
         await sleepAsync(100)
         assert e.id == 1
 
@@ -300,8 +357,7 @@ when isMainModule:
     var args = new(MyArgs)  
     args.id = 1
 
-    em.on("A", "/path", foo)
-    em.on("A", "/path", bar)
+    em.on("A", "/path", foo, bar)
     em.on("B", "/path", foo)
     em.on("B", "/", bar)
 
@@ -315,8 +371,7 @@ when isMainModule:
     em.emit("A", "/path", args)
     em.emit("B", "/", args)
 
-    em.off("A", "/path", foo)
-    em.off("A", "/path", bar)
+    em.off("A", "/path", foo, bar)
 
     assert em.countTypes() == 1
     assert em.countNames("A") == 0
@@ -332,11 +387,9 @@ when isMainModule:
 
     var emm = initAsyncEventEmitter[MyArgs]()
 
-    emm.on("A", foo)
-    emm.on("A", bar)
+    emm.on("A", foo, bar)
     emm.on("B", foo)
-    emm.on("B", foo)
-    emm.on("B", bar)
+    emm.on("B", foo, bar)
 
     assert emm.countNames() == 2
     assert emm.countProcs("A") == 2
@@ -345,8 +398,7 @@ when isMainModule:
     emm.emit("A", args)
     emm.emit("B", args)
 
-    emm.off("A", foo)
-    emm.off("A", bar)
+    emm.off("A", foo, bar)
     emm.off("B", foo)
 
     assert emm.countNames() == 1
