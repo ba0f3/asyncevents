@@ -323,21 +323,21 @@ proc off*[T](x: var AsyncEventTypeEmitter[T],
             if ctNode.head.isNil():
                 x.remove(ptNode, ctNode)
 
-proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T) =
+proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T) {.async.} =
     ## Fires an event handler with specified event arguments.
     var nNode = x.find(name)
     if not nNode.isNil():
         for pNode in nNode.nodes():
-            asyncCheck pNode.value(e)
+            await pNode.value(e)
 
-proc emit*[T](x: AsyncEventTypeEmitter[T], typ: string, name: string, e: T) =
+proc emit*[T](x: AsyncEventTypeEmitter[T], typ: string, name: string, e: T) {.async.} =
     ## Fires an event handler with specified event arguments.
     var tNode = x.find(typ)
     if not tNode.isNil():
         var nNode = tNode.find(name)
         if not nNode.isNil():
             for pNode in nNode.nodes():
-                asyncCheck pNode.value(e)
+                await pNode.value(e)
 
 when isMainModule:
     type 
@@ -347,6 +347,7 @@ when isMainModule:
     proc foo(e: MyArgs): Future[void] {.closure.} =
         var fut = newFuture[void]()
         assert e.id == 1
+        fut.complete()
         return fut
 
     proc bar(e: MyArgs) {.async, closure.} =
@@ -361,29 +362,33 @@ when isMainModule:
     em.on("B", "/path", foo)
     em.on("B", "/", bar)
 
-    assert em.countTypes() == 2
-    assert em.countNames("A") == 1
-    assert em.countNames("B") == 2
-    assert em.countProcs("A", "/path") == 2
-    assert em.countProcs("B", "/path") == 1
-    assert em.countProcs("B", "/") == 1
+    proc emAsync(foo: proc (e: MyArgs): Future[void] {.closure.},
+                 bar: proc (e: MyArgs): Future[void] {.closure.}) {.async.} =
+        assert em.countTypes() == 2
+        assert em.countNames("A") == 1
+        assert em.countNames("B") == 2
+        assert em.countProcs("A", "/path") == 2
+        assert em.countProcs("B", "/path") == 1
+        assert em.countProcs("B", "/") == 1
 
-    em.emit("A", "/path", args)
-    em.emit("B", "/", args)
+        await em.emit("A", "/path", args)
+        await em.emit("B", "/", args)
 
-    em.off("A", "/path", foo, bar)
+        em.off("A", "/path", foo, bar)
 
-    assert em.countTypes() == 1
-    assert em.countNames("A") == 0
-    assert em.countNames("B") == 2
-    assert em.countProcs("A", "/path") == 0
+        assert em.countTypes() == 1
+        assert em.countNames("A") == 0
+        assert em.countNames("B") == 2
+        assert em.countProcs("A", "/path") == 0
 
-    em.off("B", "/path", foo)
-    em.off("B", "/", bar)
+        em.off("B", "/path", foo)
+        em.off("B", "/", bar)
 
-    assert em.countTypes() == 0
-    assert em.countNames("B") == 0
-    assert em.countProcs("B", "/path") == 0
+        assert em.countTypes() == 0
+        assert em.countNames("B") == 0
+        assert em.countProcs("B", "/path") == 0
+
+    asyncCheck emAsync(foo, bar)
 
     var emm = initAsyncEventEmitter[MyArgs]()
 
@@ -391,18 +396,22 @@ when isMainModule:
     emm.on("B", foo)
     emm.on("B", foo, bar)
 
-    assert emm.countNames() == 2
-    assert emm.countProcs("A") == 2
-    assert emm.countProcs("B") == 3
+    proc emmAsync(foo: proc (e: MyArgs): Future[void] {.closure.},
+                  bar: proc (e: MyArgs): Future[void] {.closure.}) {.async.} =
+        assert emm.countNames() == 2
+        assert emm.countProcs("A") == 2
+        assert emm.countProcs("B") == 3
 
-    emm.emit("A", args)
-    emm.emit("B", args)
+        await emm.emit("A", args)
+        await emm.emit("B", args)
 
-    emm.off("A", foo, bar)
-    emm.off("B", foo)
+        emm.off("A", foo, bar)
+        emm.off("B", foo)
 
-    assert emm.countNames() == 1
-    assert emm.countProcs("A") == 0
-    assert emm.countProcs("B") == 2
+        assert emm.countNames() == 1
+        assert emm.countProcs("A") == 0
+        assert emm.countProcs("B") == 2
+
+    asyncCheck emmAsync(foo, bar)
 
     runForever()
