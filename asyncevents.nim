@@ -3,31 +3,31 @@ import asyncdispatch
 type
     AsyncEventProc*[T] = proc(e: T): Future[void] {.closure.}
 
-    AsyncEventProcNodeObj[T] = object  ## A handler node, a name node consists of
+    AsyncEventProcNodeObj*[T] = object  ## A handler node, a name node consists of
         next: ref AsyncEventProcNodeObj[T]
-        value: proc(e: T): Future[void] {.closure.}
-    AsyncEventProcNode[T] = ref AsyncEventProcNodeObj[T]
+        value*: proc(e: T): Future[void] {.closure.}
+    AsyncEventProcNode*[T] = ref AsyncEventProcNodeObj[T]
 
-    AsyncEventNameNodeObj[T] = object  ## A name node, a emitter consists of, a type node consists of
+    AsyncEventNameNodeObj*[T] = object  ## A name node, a emitter consists of, a type node consists of
         next: ref AsyncEventNameNodeObj[T]
-        value: string
+        value*: string
         head: AsyncEventProcNode[T]
         tail: AsyncEventProcNode[T]
         length: int
-    AsyncEventNameNode[T] = ref AsyncEventNameNodeObj[T]
+    AsyncEventNameNode*[T] = ref AsyncEventNameNodeObj[T]
 
     AsyncEventEmitter*[T] = object  ## An object that fires events and holds event handlers for an object.
         head: AsyncEventNameNode[T]
         tail: AsyncEventNameNode[T]
         length: int
 
-    AsyncEventTypeNodeObj[T] = object  ## A type node, a type emitter consists of
+    AsyncEventTypeNodeObj*[T] = object  ## A type node, a type emitter consists of
         next: ref AsyncEventTypeNodeObj[T]
-        value: string
+        value*: string
         head: AsyncEventNameNode[T]
         tail: AsyncEventNameNode[T]
         length: int
-    AsyncEventTypeNode[T] = ref AsyncEventTypeNodeObj[T]
+    AsyncEventTypeNode*[T] = ref AsyncEventTypeNodeObj[T]
 
     AsyncEventTypeEmitter*[T] = object  ## An object that fires events and holds event handlers for an object.
         head: AsyncEventTypeNode[T]
@@ -46,14 +46,14 @@ template newImpl() =
     new(result)
     result.value = value
 
-proc newAsyncEventProcNode[T](value: proc(e: T): Future[void] {.closure.}): 
-                             AsyncEventProcNode[T] =
+proc newAsyncEventProcNode*[T](value: proc(e: T): Future[void] {.closure.}): 
+                              AsyncEventProcNode[T] =
     newImpl()
 
-proc newAsyncEventNameNode[T](value: string): AsyncEventNameNode[T] =
+proc newAsyncEventNameNode*[T](value: string): AsyncEventNameNode[T] =
     newImpl()
 
-proc newAsyncEventTypeNode[T](value: string): AsyncEventTypeNode[T] =
+proc newAsyncEventTypeNode*[T](value: string): AsyncEventTypeNode[T] =
     newImpl()
 
 template nodesImpl() {.dirty.} =
@@ -63,36 +63,36 @@ template nodesImpl() {.dirty.} =
         yield it
         it = nxt
 
-iterator nodes[T](L: AsyncEventNameNode[T]) {.inline.} = 
+iterator nodes*[T](L: AsyncEventNameNode[T]) {.inline.} = 
     nodesImpl()
 
-iterator nodes[T](L: AsyncEventTypeNode[T]) {.inline.} = 
+iterator nodes*[T](L: AsyncEventTypeNode[T]) {.inline.} = 
     nodesImpl()
 
-iterator nodes[T](L: AsyncEventEmitter[T]) {.inline.} = 
+iterator nodes*[T](L: AsyncEventEmitter[T]) {.inline.} = 
     nodesImpl()
 
-iterator nodes[T](L: AsyncEventTypeEmitter[T]) {.inline.} = 
+iterator nodes*[T](L: AsyncEventTypeEmitter[T]) {.inline.} = 
     nodesImpl()
 
 template findImpl() {.dirty.} =
     for n in L.nodes():
         if n.value == value: return n
 
-proc find[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure.}): 
-            AsyncEventProcNode[T] =
+proc find*[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure.}): 
+             AsyncEventProcNode[T] =
     findImpl()
 
-proc find[T](L: AsyncEventTypeNode[T], value: string): 
-            AsyncEventNameNode[T] =
+proc find*[T](L: AsyncEventTypeNode[T], value: string): 
+             AsyncEventNameNode[T] =
     findImpl()
 
-proc find[T](L: AsyncEventEmitter[T], value: string): 
-            AsyncEventNameNode[T] =
+proc find*[T](L: AsyncEventEmitter[T], value: string): 
+             AsyncEventNameNode[T] =
     findImpl()
 
-proc find[T](L: AsyncEventTypeEmitter[T], value: string): 
-            AsyncEventTypeNode[T] =
+proc find*[T](L: AsyncEventTypeEmitter[T], value: string): 
+             AsyncEventTypeNode[T] =
     findImpl()
 
 template findsImpl() {.dirty.} =
