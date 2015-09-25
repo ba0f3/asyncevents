@@ -46,7 +46,7 @@ template newImpl() =
     new(result)
     result.value = value
 
-proc newAsyncEventProcNode*[T](value: proc(e: T): Future[void] {.closure.}): 
+proc newAsyncEventProcNode*[T](value: AsyncEventProc[T]): 
                               AsyncEventProcNode[T] =
     newImpl()
 
@@ -79,7 +79,7 @@ template findImpl() {.dirty.} =
     for n in L.nodes():
         if n.value == value: return n
 
-proc find*[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure.}): 
+proc find*[T](L: AsyncEventNameNode[T], value: AsyncEventProc[T]): 
              AsyncEventProcNode[T] =
     findImpl()
 
@@ -101,7 +101,7 @@ template findsImpl() {.dirty.} =
             return (prev: prev, curr: n)
         prev = n
 
-proc finds[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure.}): 
+proc finds[T](L: AsyncEventNameNode[T], value: AsyncEventProc[T]): 
              tuple[prev: AsyncEventProcNode[T], curr: AsyncEventProcNode[T]] =
     var prev: AsyncEventProcNode[T]
     findsImpl()
@@ -142,23 +142,23 @@ proc append[T](L: var AsyncEventEmitter[T], n: AsyncEventNameNode[T]) =
 proc append[T](L: var AsyncEventTypeEmitter[T], n: AsyncEventTypeNode[T]) = 
     appendImpl()
 
-proc append[T](nNode: AsyncEventNameNode[T], p: proc(e: T): Future[void] {.closure.}) = 
+proc append[T](nNode: AsyncEventNameNode[T], p: AsyncEventProc[T]) = 
     nNode.append(newAsyncEventProcNode[T](p))
 
-proc append[T](tNode: AsyncEventTypeNode[T], name: string, p: proc(e: T): Future[void] {.closure.}) = 
+proc append[T](tNode: AsyncEventTypeNode[T], name: string, p: AsyncEventProc[T]) = 
     var pNode = newAsyncEventProcNode[T](p)
     var nNode = newAsyncEventNameNode[T](name)
     nNode.append(pNode)
     tNode.append(nNode)
 
-proc append[T](eNode: var AsyncEventEmitter[T], name: string, p: proc(e: T): Future[void] {.closure.}) = 
+proc append[T](eNode: var AsyncEventEmitter[T], name: string, p: AsyncEventProc[T]) = 
     var pNode = newAsyncEventProcNode[T](p)
     var nNode = newAsyncEventNameNode[T](name)
     nNode.append(pNode)
     eNode.append(nNode)
 
 proc append[T](eNode: var AsyncEventTypeEmitter[T], 
-               typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) = 
+               typ: string, name: string, p: AsyncEventProc[T]) = 
     var pNode = newAsyncEventProcNode[T](p)
     var nNode = newAsyncEventNameNode[T](name)
     var tNode = newAsyncEventTypeNode[T](typ)
@@ -217,7 +217,7 @@ proc countTypes*[T](L: AsyncEventTypeEmitter[T]): int {.inline.} =
     return L.length
 
 proc on*[T](x: var AsyncEventEmitter[T], 
-            name: string, p: proc(e: T): Future[void] {.closure.}) =
+            name: string, p: AsyncEventProc[T]) =
     ## Assigns a event handler with the future. If the event
     ## doesn't exist, it will be created.
     var nNode = x.find(name)
@@ -227,7 +227,7 @@ proc on*[T](x: var AsyncEventEmitter[T],
         nNode.append(p)
 
 proc on*[T](x: var AsyncEventEmitter[T], 
-            name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+            name: string, ps: varargs[AsyncEventProc[T]]) =
     ## Assigns a event handler with the future. If the event
     ## doesn't exist, it will be created.
     var nNode = x.find(name)
@@ -238,7 +238,7 @@ proc on*[T](x: var AsyncEventEmitter[T],
         nNode.append(p)
 
 proc on*[T](x: var AsyncEventTypeEmitter[T], 
-            typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
+            typ: string, name: string, p: AsyncEventProc[T]) =
     ## Assigns a event handler with the callback. If the event
     ## doesn't exist, it will be created.
     var tNode = x.find(typ)
@@ -252,7 +252,7 @@ proc on*[T](x: var AsyncEventTypeEmitter[T],
             nNode.append(p)
 
 proc on*[T](x: var AsyncEventTypeEmitter[T], 
-            typ: string, name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+            typ: string, name: string, ps: varargs[AsyncEventProc[T]]) =
     ## Assigns a event handler with the callback. If the event
     ## doesn't exist, it will be created.
     var tNode = x.find(typ)
@@ -271,7 +271,7 @@ proc on*[T](x: var AsyncEventTypeEmitter[T],
         nNode.append(p)
 
 proc off*[T](x: var AsyncEventEmitter[T], 
-             name: string, p: proc(e: T): Future[void] {.closure.}) =
+             name: string, p: AsyncEventProc[T]) =
     ## Removes the callback from the specified event handler.
     var (pnNode, cnNode) = x.finds(name)
     if not cnNode.isNil():
@@ -282,7 +282,7 @@ proc off*[T](x: var AsyncEventEmitter[T],
                 x.remove(pnNode, cnNode)
 
 proc off*[T](x: var AsyncEventEmitter[T], 
-             name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+             name: string, ps: varargs[AsyncEventProc[T]]) =
     var (pnNode, cnNode) = x.finds(name)
     if not cnNode.isNil():
         for p in ps:
@@ -293,7 +293,7 @@ proc off*[T](x: var AsyncEventEmitter[T],
             x.remove(pnNode, cnNode)
 
 proc off*[T](x: var AsyncEventTypeEmitter[T], 
-             typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
+             typ: string, name: string, p: AsyncEventProc[T]) =
     ## Removes the callback from the specified event handler.
     var (ptNode, ctNode) = x.finds(typ)
     if not ctNode.isNil():
@@ -308,7 +308,7 @@ proc off*[T](x: var AsyncEventTypeEmitter[T],
                     x.remove(ptNode, ctNode)
 
 proc off*[T](x: var AsyncEventTypeEmitter[T], 
-             typ: string, name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+             typ: string, name: string, ps: varargs[AsyncEventProc[T]]) =
     ## Removes the callback from the specified event handler.
     var (ptNode, ctNode) = x.finds(typ)
     if not ctNode.isNil():
@@ -323,21 +323,55 @@ proc off*[T](x: var AsyncEventTypeEmitter[T],
             if ctNode.head.isNil():
                 x.remove(ptNode, ctNode)
 
-proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T) {.async.} =
-    ## Fires an event handler with specified event arguments.
-    var nNode = x.find(name)
-    if not nNode.isNil():
-        for pNode in nNode.nodes():
-            await pNode.value(e)
+template createCb(retFutureSym, iteratorNameSym, name: expr): stmt {.immediate.} =
+    var nameIterVar = iteratorNameSym
+    #{.push stackTrace: off.}
+    proc cb() {.closure, gcsafe.} =
+        try:
+            if not nameIterVar.finished:
+                var next = nameIterVar()
+                if next.isNil():
+                    assert retFutureSym.finished, "Async procedure's (" &
+                           name & ") return Future was not finished."
+                else:
+                    next.callback = cb
+        except:
+            if retFutureSym.finished:
+                # Take a look at tasyncexceptions for the bug which this fixes.
+                # That test explains it better than I can here.
+                raise
+            else:
+                echo(retFutureSym.repr)
+                echo(getCurrentException().repr)
+                retFutureSym.fail(getCurrentException())
+    cb()
+    #{.pop.}
 
-proc emit*[T](x: AsyncEventTypeEmitter[T], typ: string, name: string, e: T) {.async.} =
+proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T): Future[void] =
     ## Fires an event handler with specified event arguments.
-    var tNode = x.find(typ)
-    if not tNode.isNil():
-        var nNode = tNode.find(name)
+    var retFuture = newFuture[void]("emit")
+    iterator emitIter(): FutureBase {.closure.} = 
+        var nNode = x.find(name)
         if not nNode.isNil():
-            for pNode in nNode.nodes():
-                await pNode.value(e)
+            for pNode in nNode.nodes(): # proc(e: T): Future[void] 
+                yield pNode.value(e)
+        retFuture.complete()
+    createCb(retFuture, emitIter, "emit")
+    return retFuture
+
+proc emit*[T](x: AsyncEventTypeEmitter[T], typ: string, name: string, e: T): Future[void] =
+    ## Fires an event handler with specified event arguments.
+    var retFuture = newFuture[void]("emit")
+    iterator emitIter(): FutureBase {.closure.} = 
+        var tNode = x.find(typ)
+        if not tNode.isNil():
+            var nNode = tNode.find(name)
+            if not nNode.isNil():
+                for pNode in nNode.nodes():
+                    yield pNode.value(e)    
+        retFuture.complete()
+    createCb(retFuture, emitIter, "emit")
+    return retFuture
 
 when isMainModule:
     type 
