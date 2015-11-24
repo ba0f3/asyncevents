@@ -1,98 +1,101 @@
 import asyncdispatch
 
 type
-    AsyncEventProc*[T] = proc(e: T): Future[void] {.closure.}
+    EventKey* = int | string
+    EventProc*[T] = proc(e: T): Future[void] {.closure, gcsafe.}
 
-    AsyncEventProcNodeObj*[T] = object  ## A handler node, a name node consists of
-        next: ref AsyncEventProcNodeObj[T]
-        value*: proc(e: T): Future[void] {.closure.}
-    AsyncEventProcNode*[T] = ref AsyncEventProcNodeObj[T]
+    EventProcNode*[T] = ref object
+        next: EventProcNode[T]
+        value*: proc(e: T): Future[void] {.closure, gcsafe.}
 
-    AsyncEventNameNodeObj*[T] = object  ## A name node, a emitter consists of, a type node consists of
-        next: ref AsyncEventNameNodeObj[T]
-        value*: string
-        head: AsyncEventProcNode[T]
-        tail: AsyncEventProcNode[T]
-        length: int
-    AsyncEventNameNode*[T] = ref AsyncEventNameNodeObj[T]
-
-    AsyncEventEmitter*[T] = object  ## An object that fires events and holds event handlers for an object.
-        head: AsyncEventNameNode[T]
-        tail: AsyncEventNameNode[T]
+    EventProcList*[T] = object
+        head: EventProcNode[T]
+        tail: EventProcNode[T]
         length: int
 
-    AsyncEventTypeNodeObj*[T] = object  ## A type node, a type emitter consists of
-        next: ref AsyncEventTypeNodeObj[T]
-        value*: string
-        head: AsyncEventNameNode[T]
-        tail: AsyncEventNameNode[T]
-        length: int
-    AsyncEventTypeNode*[T] = ref AsyncEventTypeNodeObj[T]
+    EventPathNode*[T, Path] = ref object
+        next: EventPathNode[T, Path]
+        value*: Path
+        list: EventProcList[T]
 
-    AsyncEventTypeEmitter*[T] = object  ## An object that fires events and holds event handlers for an object.
-        head: AsyncEventTypeNode[T]
-        tail: AsyncEventTypeNode[T]
+    EventPathList*[T, Path] = object
+        head: EventPathNode[T, Path]
+        tail: EventPathNode[T, Path]
         length: int
 
-proc initAsyncEventTypeEmitter*[T](): AsyncEventTypeEmitter[T] =
-    ## Creates and returns a new AsyncEventTypeEmitter[T].
+    EventNameNode*[T, Name, Path] = ref object
+        next: EventNameNode[T, Name, Path]
+        value*: Name
+        list: EventPathList[T, Path]
+
+    EventNameList*[T, Name, Path] = object
+        head: EventNameNode[T, Name, Path]
+        tail: EventNameNode[T, Name, Path]
+        length: int
+
+    AsyncEventEmitter*[T, Path] = EventPathList[T, Path]
+    AsyncEventNameEmitter*[T, Name, Path] = EventNameList[T, Name, Path]
+
+proc initAsyncEventEmitter*[T; Path: EventKey](): AsyncEventEmitter[T, Path] =
+    ## Creates and returns a new AsyncEventEmitter[T, Path].
     discard
 
-proc initAsyncEventEmitter*[T](): AsyncEventEmitter[T] =
-    ## Creates and returns a new AsyncEventEmitter[T].
+proc initAsyncEventNameEmitter*[T; Name,Path: EventKey](): AsyncEventNameEmitter[T, Name, Path] =
+    ## Creates and returns a new AsyncEventNameEmitter[T].
     discard
 
-template newImpl() = 
+template newImpl() {.dirty.} = 
     new(result)
     result.value = value
 
-proc newAsyncEventProcNode*[T](value: proc(e: T): Future[void] {.closure.}): 
-                              AsyncEventProcNode[T] =
+proc newEventProcNode*[T](value: EventProc[T]): EventProcNode[T] = 
     newImpl()
 
-proc newAsyncEventNameNode*[T](value: string): AsyncEventNameNode[T] =
+proc newEventPathNode*[T; Path: EventKey](value: Path): EventPathNode[T, Path] = 
     newImpl()
 
-proc newAsyncEventTypeNode*[T](value: string): AsyncEventTypeNode[T] =
+proc newEventNameNode*[T; Name,Path: EventKey](value: Name): EventNameNode[T, Name, Path] = 
     newImpl()
 
 template nodesImpl() {.dirty.} =
     var it = L.head
     while it != nil:
-        var nxt = it.next
+        var next = it.next
         yield it
-        it = nxt
+        it = next
 
-iterator nodes*[T](L: AsyncEventNameNode[T]) {.inline.} = 
+iterator nodes*[T](L: EventProcList[T]): EventProcNode[T]  {.inline.} = 
     nodesImpl()
 
-iterator nodes*[T](L: AsyncEventTypeNode[T]) {.inline.} = 
+iterator nodes*[T; Path: EventKey](L: EventPathList[T, Path]): EventPathNode[T, Path] {.inline.} = 
     nodesImpl()
 
-iterator nodes*[T](L: AsyncEventEmitter[T]) {.inline.} = 
+iterator nodes*[T; Name,Path: EventKey](L: EventNameList[T, Name, Path]): EventNameNode[T, Name, Path] {.inline.} = 
     nodesImpl()
 
-iterator nodes*[T](L: AsyncEventTypeEmitter[T]) {.inline.} = 
+iterator nodes*[T; Path: EventKey](L: AsyncEventEmitter[T, Path]): EventPathNode[T, Path] {.inline.} = 
+    nodesImpl()
+
+iterator nodes*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path]): EventNameNode[T, Name, Path] {.inline.} = 
     nodesImpl()
 
 template findImpl() {.dirty.} =
-    for n in L.nodes():
+    for n in nodes(L):
         if n.value == value: return n
 
-proc find*[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure.}): 
-             AsyncEventProcNode[T] =
+proc find*[T](L: EventProcList[T], value: EventProc[T]): EventProcNode[T] =
     findImpl()
 
-proc find*[T](L: AsyncEventTypeNode[T], value: string): 
-             AsyncEventNameNode[T] =
+proc find*[T; Path: EventKey](L: EventPathList[T, Path], value: Path): EventPathNode[T, Path] =
     findImpl()
 
-proc find*[T](L: AsyncEventEmitter[T], value: string): 
-             AsyncEventNameNode[T] =
+proc find*[T; Name,Path: EventKey](L: EventNameList[T, Name, Path], value: Name): EventNameNode[T, Name, Path] =
     findImpl()
 
-proc find*[T](L: AsyncEventTypeEmitter[T], value: string): 
-             AsyncEventTypeNode[T] =
+proc find*[T; Path: EventKey](L: AsyncEventEmitter[T, Path], value: Path): EventPathNode[T, Path] =
+    findImpl()
+
+proc find*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path], value: Name): EventNameNode[T, Name, Path] =
     findImpl()
 
 template findsImpl() {.dirty.} =
@@ -101,317 +104,373 @@ template findsImpl() {.dirty.} =
             return (prev: prev, curr: n)
         prev = n
 
-proc finds[T](L: AsyncEventNameNode[T], value: proc(e: T): Future[void] {.closure.}): 
-             tuple[prev: AsyncEventProcNode[T], curr: AsyncEventProcNode[T]] =
-    var prev: AsyncEventProcNode[T]
+proc finds*[T](L: EventProcList[T], value: EventProc[T]): 
+             tuple[prev: EventProcNode[T], curr: EventProcNode[T]] =
+    var prev: EventProcNode[T]
     findsImpl()
 
-proc finds[T](L: AsyncEventTypeNode[T], value: string): 
-             tuple[prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]] =
-    var prev: AsyncEventNameNode[T]
+proc finds*[T; Path: EventKey](L: EventPathList[T, Path], value: Path):
+             tuple[prev: EventPathNode[T, Path], curr: EventPathNode[T, Path]] =
+    var prev: EventPathNode[T, Path]
     findsImpl()
 
-proc finds[T](L: AsyncEventEmitter[T], value: string): 
-             tuple[prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]] =
-    var prev: AsyncEventNameNode[T]
+proc finds*[T; Name,Path: EventKey](L: EventNameList[T, Name, Path], value: Name):
+             tuple[prev: EventNameNode[T, Name, Path], curr: EventNameNode[T, Name, Path]] =
+    var prev: EventNameNode[T, Name, Path]
     findsImpl()
 
-proc finds[T](L: AsyncEventTypeEmitter[T], value: string): 
-             tuple[prev: AsyncEventTypeNode[T], curr: AsyncEventTypeNode[T]] =
-    var prev: AsyncEventTypeNode[T]
+proc finds*[T; Path: EventKey](L: AsyncEventEmitter[T, Path], value: Path):
+             tuple[prev: EventPathNode[T, Path], curr: EventPathNode[T, Path]] =
+    var prev: EventPathNode[T, Path]
+    findsImpl()
+
+proc finds*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path], value: Name):
+             tuple[prev: EventNameNode[T, Name, Path], curr: EventNameNode[T, Name, Path]] =
+    var prev: EventNameNode[T, Name, Path]
     findsImpl()
 
 template appendImpl() =
     n.next = nil
     if L.tail != nil:
-        assert(L.tail.next == nil)
+        assert L.tail.next == nil
         L.tail.next = n
     L.tail = n
     if L.head == nil: L.head = n
-    L.length.inc()
+    inc(L.length)
 
-proc append[T](L: AsyncEventNameNode[T], n: AsyncEventProcNode[T]) = 
+proc append*[T](L: var EventProcList[T], n: EventProcNode[T]) = 
     appendImpl()
 
-proc append[T](L: AsyncEventTypeNode[T], n: AsyncEventNameNode[T]) = 
+proc append*[T; Path: EventKey](L: var EventPathList[T, Path], n: EventPathNode[T, Path]) = 
     appendImpl()
 
-proc append[T](L: var AsyncEventEmitter[T], n: AsyncEventNameNode[T]) = 
+proc append*[T; Name,Path: EventKey](L: var EventNameList[T, Name, Path], n: EventNameNode[T, Name, Path]) = 
     appendImpl()
 
-proc append[T](L: var AsyncEventTypeEmitter[T], n: AsyncEventTypeNode[T]) = 
+proc append*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], n: EventPathNode[T, Path]) = 
     appendImpl()
 
-proc append[T](nNode: AsyncEventNameNode[T], p: proc(e: T): Future[void] {.closure.}) = 
-    nNode.append(newAsyncEventProcNode[T](p))
+proc append*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], n: EventNameNode[T, Name, Path]) = 
+    appendImpl()
 
-proc append[T](tNode: AsyncEventTypeNode[T], name: string, p: proc(e: T): Future[void] {.closure.}) = 
-    var pNode = newAsyncEventProcNode[T](p)
-    var nNode = newAsyncEventNameNode[T](name)
-    nNode.append(pNode)
-    tNode.append(nNode)
+proc append*[T](L: var EventProcList[T], p: EventProc[T]) = 
+    append(L, newEventProcNode[T](p))
 
-proc append[T](eNode: var AsyncEventEmitter[T], name: string, p: proc(e: T): Future[void] {.closure.}) = 
-    var pNode = newAsyncEventProcNode[T](p)
-    var nNode = newAsyncEventNameNode[T](name)
-    nNode.append(pNode)
-    eNode.append(nNode)
+proc append*[T; Path: EventKey](L: var EventPathList[T, Path], path: Path, p: EventProc[T]) = 
+    var procNode = newEventProcNode[T](p)
+    var pathNode = newEventPathNode[T, Path](path)
+    append(pathNode.list, procNode)
+    append(L, pathNode)
 
-proc append[T](eNode: var AsyncEventTypeEmitter[T], 
-               typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) = 
-    var pNode = newAsyncEventProcNode[T](p)
-    var nNode = newAsyncEventNameNode[T](name)
-    var tNode = newAsyncEventTypeNode[T](typ)
-    nNode.append(pNode)
-    tNode.append(nNode)
-    eNode.append(tNode)
+proc append*[T; Name,Path: EventKey](L: var EventNameList[T, Name, Path], name: Name, path: Path, p: EventProc[T]) = 
+    var procNode = newEventProcNode[T](p)
+    var pathNode = newEventPathNode[T, Path](path)
+    var nameNode = newEventNameNode[T, Name, Path](name)
+    append(pathNode.list, procNode)
+    append(nameNode.list, pathNode)
+    append(L, nameNode)
+
+proc append*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], path: Path, p: EventProc[T]) = 
+    var procNode = newEventProcNode[T](p)
+    var pathNode = newEventPathNode[T, Path](path)
+    append(pathNode.list, procNode)
+    append(L, pathNode)
+
+proc append*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path, p: EventProc[T]) = 
+    var procNode = newEventProcNode[T](p)
+    var pathNode = newEventPathNode[T, Path](path)
+    var nameNode = newEventNameNode[T, Name, Path](name)
+    append(pathNode.list, procNode)
+    append(nameNode.list, pathNode)
+    append(L, nameNode)
 
 template removeImpl() =
     # L, prev, curr, next = curr.next
-    if prev.isNil():
+    if isNil(prev):
         L.head = curr.next
     else:
         prev.next = curr.next
     L.tail = curr.next
     curr.next = nil
-    L.length.dec()
+    dec(L.length)
 
-proc remove[T](L: AsyncEventNameNode[T], prev: AsyncEventProcNode[T], curr: AsyncEventProcNode[T]) = 
+proc remove*[T](L: var EventProcList[T], prev: EventProcNode[T], curr: EventProcNode[T]) = 
     removeImpl()
 
-proc remove[T](L: AsyncEventTypeNode[T], prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]) = 
+proc remove*[T; Path: EventKey](L: var EventPathList[T, Path], prev: EventPathNode[T, Path], curr: EventPathNode[T, Path]) = 
     removeImpl()
 
-proc remove[T](L: var AsyncEventEmitter[T], prev: AsyncEventNameNode[T], curr: AsyncEventNameNode[T]) = 
+proc remove*[T; Name,Path: EventKey](L: var EventNameList[T, Name, Path], prev: EventNameNode[T, Name, Path], curr: EventNameNode[T, Name, Path]) = 
     removeImpl()
 
-proc remove[T](L: var AsyncEventTypeEmitter[T], prev: AsyncEventTypeNode[T], curr: AsyncEventTypeNode[T]) = 
+proc remove*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], prev: EventPathNode[T, Path], curr: EventPathNode[T, Path]) = 
     removeImpl()
 
-proc countProcs*[T](L: AsyncEventTypeEmitter[T], typ: string, name: string): int {.inline.} =
-    ## Counts the handlers of an AsyncEventTypeEmitter[T]. 
-    var tnode = L.find(typ)
-    if not tnode.isNil():
-        var nnode = tnode.find(name)
-        if not nnode.isNil():
-            return nnode.length
+proc remove*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], prev: EventNameNode[T, Name, Path], curr: EventNameNode[T, Name, Path]) = 
+    removeImpl()
 
-proc countProcs*[T](L: AsyncEventEmitter[T], name: string): int {.inline.} =
+proc countProcs*[T; Path: EventKey](L: AsyncEventEmitter[T, Path], path: Path): int =
     ## Counts the handlers of an AsyncEventEmitter[T]. 
-    var nnode = L.find(name)
-    if not nnode.isNil():
-        return nnode.length
+    var pathNode = find(L, path)
+    if not isNil(pathNode):
+        return pathNode.list.length
 
-proc countNames*[T](L: AsyncEventTypeEmitter[T], typ: string): int {.inline.} =
-    ## Counts the names of an AsyncEventTypeEmitter[T]. 
-    var node = L.find(typ)
-    if not node.isNil(): 
-        return node.length
-
-proc countNames*[T](L: AsyncEventEmitter[T]): int {.inline.} =
-    ## Counts the names of an AsyncEventEmitter[T]. 
+proc countPaths*[T; Path: EventKey](L: AsyncEventEmitter[T, Path]): int =
+    ## Counts the paths of an AsyncEventEmitter[T]. 
     return L.length
 
-proc countTypes*[T](L: AsyncEventTypeEmitter[T]): int {.inline.} =
-    ## Counts the types of an AsyncEventTypeEmitter[T]. 
+proc countProcs*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path): int =
+    ## Counts the handlers of an AsyncEventNameEmitter[T]. 
+    var nameNode = find(L, name)
+    if not isNil(nameNode):
+        var pathNode = find(nameNode.list, path)
+        if not isNil(pathNode):
+            return pathNode.list.length
+
+proc countPaths*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path], name: Name): int =
+    ## Counts the paths of an AsyncEventNameEmitter[T]. 
+    var nameNode = find(L, name)
+    if not isNil(nameNode): 
+        return nameNode.list.length
+
+proc countNames*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path]): int =
+    ## Counts the names of an AsyncEventNameEmitter[T]. 
     return L.length
 
-proc on*[T](x: var AsyncEventEmitter[T], 
-            name: string, p: proc(e: T): Future[void] {.closure.}) =
+proc on*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], path: Path, p: EventProc[T]) =
     ## Assigns a event handler with the future. If the event
     ## doesn't exist, it will be created.
-    var nNode = x.find(name)
-    if nNode.isNil():
-        x.append(name, p)
+    var pathNode = find(L, path)
+    if isNil(pathNode):
+        append(L, path, p)
     else:
-        nNode.append(p)
+        append(pathNode.list, p)
 
-proc on*[T](x: var AsyncEventEmitter[T], 
-            name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+proc on*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], path: Path, ps: varargs[EventProc[T]]) =
     ## Assigns a event handler with the future. If the event
     ## doesn't exist, it will be created.
-    var nNode = x.find(name)
-    if nNode.isNil():
-        nNode = newAsyncEventNameNode[T](name)
-        x.append(nNode)
+    var pathNode = find(L, path)
+    if isNil(pathNode):
+        pathNode = newEventPathNode[T, Path](path)
+        append(L, pathNode)
     for p in ps:
-        nNode.append(p)
+        append(pathNode.list, p)
 
-proc on*[T](x: var AsyncEventTypeEmitter[T], 
-            typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
+proc on*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path, p: EventProc[T]) =
     ## Assigns a event handler with the callback. If the event
     ## doesn't exist, it will be created.
-    var tNode = x.find(typ)
-    if tNode.isNil():
-        x.append(typ, name, p)
+    var nameNode = find(L, name)
+    if isNil(nameNode):
+        append(L, name, path, p)
     else:
-        var nNode = tNode.find(name)
-        if nNode.isNil():
-            tNode.append(name, p)
+        var pathNode = find(nameNode.list, path)
+        if isNil(pathNode):
+            append(nameNode.list, path, p)
         else:
-            nNode.append(p)
+            append(pathNode.list, p)
 
-proc on*[T](x: var AsyncEventTypeEmitter[T], 
-            typ: string, name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+proc on*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path, ps: varargs[EventProc[T]]) =
     ## Assigns a event handler with the callback. If the event
     ## doesn't exist, it will be created.
-    var tNode = x.find(typ)
-    var nNode: AsyncEventNameNode[T]
-    if tNode.isNil():
-        tNode = newAsyncEventTypeNode[T](typ)
-        nNode = newAsyncEventNameNode[T](name)
-        x.append(tNode)
-        tNode.append(nNode)
+    var nameNode = find(L, name)
+    var pathNode: EventPathNode[T, Path]
+    if isNil(nameNode):
+        nameNode = newEventNameNode[T, Name, Path](name)
+        pathNode = newEventPathNode[T, Path](path)
+        append(L, nameNode)
+        append(nameNode.list, pathNode)
     else:
-        nNode = tNode.find(name)
-        if nNode.isNil():
-            nNode = newAsyncEventNameNode[T](name)
-            tNode.append(nNode)
+        pathNode = find(nameNode.list, path)
+        if isNil(pathNode):
+            pathNode = newEventPathNode[T, Path](path)
+            append(nameNode.list, pathNode)
     for p in ps:
-        nNode.append(p)
+        append(pathNode.list, p)
 
-proc off*[T](x: var AsyncEventEmitter[T], 
-             name: string, p: proc(e: T): Future[void] {.closure.}) =
+proc off*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], path: Path, p: EventProc[T]) =
     ## Removes the callback from the specified event handler.
-    var (pnNode, cnNode) = x.finds(name)
-    if not cnNode.isNil():
-        var (ppNode, cpNode) = cnNode.finds(p)
-        if not cpNode.isNil():
-            cnNode.remove(ppNode, cpNode)
-            if cnNode.head.isNil():
-                x.remove(pnNode, cnNode)
+    var (prevPathNode, currPathNode) = finds(L, path)
+    if not isNil(currPathNode):
+        var (prevProcNode, currProcNode) = finds(currPathNode.list, p)
+        if not isNil(currProcNode):
+            remove(currPathNode.list, prevProcNode, currProcNode)
+            if isNil(currPathNode.list.head):
+                remove(L, prevPathNode, currPathNode)
 
-proc off*[T](x: var AsyncEventEmitter[T], 
-             name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
-    var (pnNode, cnNode) = x.finds(name)
-    if not cnNode.isNil():
+proc off*[T; Path: EventKey](L: var AsyncEventEmitter[T, Path], path: Path, ps: varargs[EventProc[T]]) =
+    var (prevPathNode, currPathNode) = finds(L, path)
+    if not isNil(currPathNode):
         for p in ps:
-            var (ppNode, cpNode) = cnNode.finds(p)
-            if not cpNode.isNil():
-                cnNode.remove(ppNode, cpNode)
-        if cnNode.head.isNil():
-            x.remove(pnNode, cnNode)
+            var (prevProcNode, currProcNode) = finds(currPathNode.list, p)
+            if not isNil(currProcNode):
+                remove(currPathNode.list, prevProcNode, currProcNode)
+        if isNil(currPathNode.list.head):
+            remove(L, prevPathNode, currPathNode)
 
-proc off*[T](x: var AsyncEventTypeEmitter[T], 
-             typ: string, name: string, p: proc(e: T): Future[void] {.closure.}) =
+proc off*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path, p: EventProc[T]) =
     ## Removes the callback from the specified event handler.
-    var (ptNode, ctNode) = x.finds(typ)
-    if not ctNode.isNil():
-        var (pnNode, cnNode) = ctNode.finds(name)
-        if not cnNode.isNil():
-            var (ppNode, cpNode) = cnNode.finds(p)
-            if not cpNode.isNil():
-                cnNode.remove(ppNode, cpNode)
-                if cnNode.head.isNil():
-                    ctNode.remove(pnNode, cnNode)
-                if ctNode.head.isNil():
-                    x.remove(ptNode, ctNode)
+    var (prevNameNode, currNameNode) = finds(L, name)
+    if not isNil(currNameNode):
+        var (prevPathNode, currPathNode) = finds(currNameNode.list, path)
+        if not isNil(currPathNode):
+            var (prevProcNode, currProcNode) = finds(currPathNode.list, p)
+            if not isNil(currProcNode):
+                remove(currPathNode.list, prevProcNode, currProcNode)
+                if isNil(currPathNode.list.head):
+                    remove(currNameNode.list, prevPathNode, currPathNode)
+                    if isNil(currNameNode.list.head):
+                        remove(L, prevNameNode, currNameNode)
 
-proc off*[T](x: var AsyncEventTypeEmitter[T], 
-             typ: string, name: string, ps: varargs[proc(e: T): Future[void] {.closure.}]) =
+proc off*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path, ps: varargs[EventProc[T]]) =
     ## Removes the callback from the specified event handler.
-    var (ptNode, ctNode) = x.finds(typ)
-    if not ctNode.isNil():
-        var (pnNode, cnNode) = ctNode.finds(name)
-        if not cnNode.isNil():
+    var (prevNameNode, currNameNode) = finds(L, name)
+    if not isNil(currNameNode):
+        var (prevPathNode, currPathNode) = finds(currNameNode.list, path)
+        if not isNil(currPathNode):
             for p in ps:
-                var (ppNode, cpNode) = cnNode.finds(p)
-                if not cpNode.isNil():
-                    cnNode.remove(ppNode, cpNode)
-            if cnNode.head.isNil():
-                ctNode.remove(pnNode, cnNode)
-            if ctNode.head.isNil():
-                x.remove(ptNode, ctNode)
+                var (prevProcNode, currProcNode) = finds(currPathNode.list, p)
+                if not isNil(currProcNode):
+                    remove(currPathNode.list, prevProcNode, currProcNode)
+            if isNil(currPathNode.list.head):
+                remove(currNameNode.list, prevPathNode, currPathNode)
+                if isNil(currNameNode.list.head):
+                    remove(L, prevNameNode, currNameNode)
 
-proc emit*[T](x: AsyncEventEmitter[T], name: string, e: T) {.async.} =
-    ## Fires an event handler with specified event arguments.
-    var nNode = x.find(name)
-    if not nNode.isNil():
-        for pNode in nNode.nodes():
-            await pNode.value(e)
+template createCb(retFutureSym, iteratorNameSym, name: expr): stmt {.immediate.} =
+    var nameIterVar = iteratorNameSym
+    #{.push stackTrace: off.}
+    proc cb() {.closure, gcsafe.} =
+        try:
+            if not nameIterVar.finished:
+                var next = nameIterVar()
+                if isNil(next):
+                    assert retFutureSym.finished, "Async procedure's (" &
+                             name & ") return Future was not finished."
+                else:
+                    next.callback = cb
+        except:
+            if retFutureSym.finished:
+                # Take a look at tasyncexceptions for the bug which this fixes.
+                # That test explains it better than I can here.
+                raise
+            else:
+                echo(repr(retFutureSym))
+                echo(repr(getCurrentException()))
+                fail(retFutureSym, getCurrentException())
+    cb()
+    #{.pop.}
 
-proc emit*[T](x: AsyncEventTypeEmitter[T], typ: string, name: string, e: T) {.async.} =
+proc emit*[T; Path: EventKey](L: AsyncEventEmitter[T, Path], path: Path, e: T): Future[void] =
     ## Fires an event handler with specified event arguments.
-    var tNode = x.find(typ)
-    if not tNode.isNil():
-        var nNode = tNode.find(name)
-        if not nNode.isNil():
-            for pNode in nNode.nodes():
-                await pNode.value(e)
+    var retFuture = newFuture[void]("emit")
+    iterator emitIter(): FutureBase {.closure, gcsafe.} = 
+        var pathNode = find(L, path)
+        if not isNil(pathNode):
+            for procNode in nodes(pathNode.list): # proc(e: T): Future[void] 
+                yield procNode.value(e)
+        complete(retFuture)
+    createCb(retFuture, emitIter, "emit")
+    return retFuture
+
+proc emit*[T; Name,Path: EventKey](L: AsyncEventNameEmitter[T, Name, Path], name: Name, path: Path, e: T): Future[void] =
+    ## Fires an event handler with specified event arguments.
+    var retFuture = newFuture[void]("emit")
+    iterator emitIter(): FutureBase {.closure.} = 
+        var nameNode = find(L, name)
+        if not isNil(nameNode):
+            var pathNode = find(nameNode.list, name)
+            if not isNil(pathNode):
+                for procNode in nodes(pathNode.list):
+                    yield procNode.value(e)    
+        complete(retFuture)
+    createCb(retFuture, emitIter, "emit")
+    return retFuture
 
 when isMainModule:
     type 
-        MyArgs = ref object
+        Args = ref object
             id: int
 
-    proc foo(e: MyArgs): Future[void] {.closure.} =
-        var fut = newFuture[void]()
-        assert e.id == 1
-        fut.complete()
-        return fut
+        Callback = EventProc[Args]
 
-    proc bar(e: MyArgs) {.async, closure.} =
-        await sleepAsync(100)
-        assert e.id == 1
+        Ctx = ref object
+            id: int
 
-    var em = initAsyncEventTypeEmitter[MyArgs]()
-    var args = new(MyArgs)  
-    args.id = 1
+    proc foo(ctx: Ctx): Callback =
+        proc cb (e: Args): Future[void] =
+            result = newFuture[void]()
+            assert ctx.id == 1
+            assert e.id == 1
+            complete(result)
+        result = cb
 
-    em.on("A", "/path", foo, bar)
-    em.on("B", "/path", foo)
-    em.on("B", "/", bar)
+    proc bar(ctx: Ctx): Callback =
+        proc cb(e: Args): Future[void] {.async.} =
+            await sleepAsync(100)
+            assert ctx.id == 1
+            assert e.id == 1
+        result = cb
 
-    proc emAsync(foo: proc (e: MyArgs): Future[void] {.closure.},
-                 bar: proc (e: MyArgs): Future[void] {.closure.}) {.async.} =
-        assert em.countTypes() == 2
-        assert em.countNames("A") == 1
-        assert em.countNames("B") == 2
-        assert em.countProcs("A", "/path") == 2
-        assert em.countProcs("B", "/path") == 1
-        assert em.countProcs("B", "/") == 1
+    proc test() {.async.} =
+        var args = new(Args)  
+        args.id = 1
+        var ctx = new(Ctx)
+        ctx.id = 1
 
-        await em.emit("A", "/path", args)
-        await em.emit("B", "/", args)
+        var em = initAsyncEventNameEmitter[Args, string, string]()
+        var fooCb = foo(ctx)
+        var barCb = bar(ctx)
 
-        em.off("A", "/path", foo, bar)
+        on(em, "A", "/path", fooCb, barCb)
+        on(em, "B", "/path", fooCb)
+        on(em, "B", "/", barCb)
 
-        assert em.countTypes() == 1
-        assert em.countNames("A") == 0
-        assert em.countNames("B") == 2
-        assert em.countProcs("A", "/path") == 0
+        assert countNames(em) == 2
+        assert countPaths(em, "A") == 1
+        assert countPaths(em, "B") == 2
+        assert countProcs(em, "A", "/path") == 2
+        assert countProcs(em, "B", "/path") == 1
+        assert countProcs(em, "B", "/") == 1
 
-        em.off("B", "/path", foo)
-        em.off("B", "/", bar)
+        await emit(em, "A", "/path", args)
+        await emit(em, "B", "/", args)
 
-        assert em.countTypes() == 0
-        assert em.countNames("B") == 0
-        assert em.countProcs("B", "/path") == 0
+        off(em, "A", "/path", fooCb, barCb)
 
-    asyncCheck emAsync(foo, bar)
+        assert countNames(em) == 1
+        assert countPaths(em, "A") == 0
+        assert countPaths(em, "B") == 2
+        assert countProcs(em, "A", "/path") == 0
 
-    var emm = initAsyncEventEmitter[MyArgs]()
+        off(em, "B", "/path", fooCb)
+        off(em, "B", "/", barCb)
 
-    emm.on("A", foo, bar)
-    emm.on("B", foo)
-    emm.on("B", foo, bar)
+        assert countNames(em) == 0
+        assert countPaths(em, "B") == 0
+        assert countProcs(em, "B", "/path") == 0
 
-    proc emmAsync(foo: proc (e: MyArgs): Future[void] {.closure.},
-                  bar: proc (e: MyArgs): Future[void] {.closure.}) {.async.} =
-        assert emm.countNames() == 2
-        assert emm.countProcs("A") == 2
-        assert emm.countProcs("B") == 3
+        var emm = initAsyncEventEmitter[Args, string]()
 
-        await emm.emit("A", args)
-        await emm.emit("B", args)
+        on(emm, "A", fooCb, barCb)
+        on(emm, "B", fooCb)
+        on(emm, "B", fooCb, barCb)
 
-        emm.off("A", foo, bar)
-        emm.off("B", foo)
+        assert countPaths(emm) == 2
+        assert countProcs(emm, "A") == 2
+        assert countProcs(emm, "B") == 3
 
-        assert emm.countNames() == 1
-        assert emm.countProcs("A") == 0
-        assert emm.countProcs("B") == 2
+        await emit(emm, "A", args)
+        await emit(emm, "B", args)
 
-    asyncCheck emmAsync(foo, bar)
+        off(emm, "A", fooCb, barCb)
+        off(emm, "B", fooCb)
 
+        assert countPaths(emm) == 1
+        assert countProcs(emm, "A") == 0
+        assert countProcs(emm, "B") == 2
+
+        echo "Test complete."
+        quit(QUIT_SUCCESS)
+
+    asyncCheck test()
     runForever()

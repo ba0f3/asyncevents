@@ -11,51 +11,92 @@ There has two emitter objects. **`AsyncEventEmitter[T]`** just binds a name for 
 ```nim
 import asyncdispatch, asyncevents
 
-type MyArgs = ref object
-    userId: int
-    article: string
+type 
+    Args = ref object
+        id: int
 
-proc foo(e: MyArgs) {.async, closure.} =
-    await sleepAsync(100)
-    echo e.userId
+    Callback = EventProc[Args]
 
-proc bar(e: MyArgs) {.async, closure.} =
-    await sleepAsync(200)
-    echo e.article
+    Ctx = ref object
+        id: int
 
-var em = initAsyncEventEmitter[MyArgs]()
-em.on("request", foo, bar)
-em.on("request", foo)
+proc foo(ctx: Ctx): Callback =
+    proc cb (e: Args): Future[void] =
+        result = newFuture[void]()
+        assert ctx.id == 1
+        assert e.id == 1
+        complete(result)
+    result = cb
 
-proc test1() {.async.} =
-    var args = new(MyArgs)
-    args.userId = 1
-    args.article = "Hello world!"
+proc bar(ctx: Ctx): Callback =
+    proc cb(e: Args) {.async.} =
+        await sleepAsync(100)
+        assert ctx.id == 1
+        assert e.id == 1
+    result = cb
 
-    echo "client request"
-    await em.emit("request", args)
+proc test() {.async.} =
+    var args = new(Args)  
+    args.id = 1
+    var ctx = new(Ctx)
+    ctx.id = 1
 
-    # do something
+    var em = initAsyncEventNameEmitter[Args, string, string]()
+    var fooCb = foo(ctx)
+    var barCb = bar(ctx)
 
-    echo "client response"
-    await em.emit("response", args)
+    on(em, "A", "/path", fooCb, barCb)
+    on(em, "B", "/path", fooCb)
+    on(em, "B", "/", barCb)
 
-var emm = initAsyncEventTypeEmitter[MyArgs]()
+    assert countNames(em) == 2
+    assert countPaths(em, "A") == 1
+    assert countPaths(em, "B") == 2
+    assert countProcs(em, "A", "/path") == 2
+    assert countProcs(em, "B", "/path") == 1
+    assert countProcs(em, "B", "/") == 1
 
-emm.on("get", "/article", foo, bar)
+    await emit(em, "A", "/path", args)
+    await emit(em, "B", "/", args)
 
-proc test2() {.async.} =
-    var args = new(MyArgs)
-    args.userId = 1
-    args.article = "Hello world!"
+    off(em, "A", "/path", fooCb, barCb)
 
-    echo "client get article"
-    await emm.emit("get", "/article", args)
+    assert countNames(em) == 1
+    assert countPaths(em, "A") == 0
+    assert countPaths(em, "B") == 2
+    assert countProcs(em, "A", "/path") == 0
 
-    # do something
+    off(em, "B", "/path", fooCb)
+    off(em, "B", "/", barCb)
 
-asyncCheck test1()
-asyncCheck test2()
+    assert countNames(em) == 0
+    assert countPaths(em, "B") == 0
+    assert countProcs(em, "B", "/path") == 0
+
+    var emm = initAsyncEventEmitter[Args, string]()
+
+    on(emm, "A", fooCb, barCb)
+    on(emm, "B", fooCb)
+    on(emm, "B", fooCb, barCb)
+
+    assert countPaths(emm) == 2
+    assert countProcs(emm, "A") == 2
+    assert countProcs(emm, "B") == 3
+
+    await emit(emm, "A", args)
+    await emit(emm, "B", args)
+
+    off(emm, "A", fooCb, barCb)
+    off(emm, "B", fooCb)
+
+    assert countPaths(emm) == 1
+    assert countProcs(emm, "A") == 0
+    assert countProcs(emm, "B") == 2
+
+    echo "Test complete."
+    quit(QUIT_SUCCESS)
+
+asyncCheck test()
 runForever()
 ```
 
