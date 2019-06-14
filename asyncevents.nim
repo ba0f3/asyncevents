@@ -336,7 +336,7 @@ proc off*[T; Name,Path: EventKey](L: var AsyncEventNameEmitter[T, Name, Path], n
                 if isNil(currNameNode.list.head):
                     remove(L, prevNameNode, currNameNode)
 
-template createCb(retFutureSym, iteratorNameSym, name: expr): stmt {.immediate.} =
+template createCb(retFutureSym, iteratorNameSym, name: expr): stmt =
     var nameIterVar = iteratorNameSym
     #{.push stackTrace: off.}
     proc cb() {.closure, gcsafe.} =
